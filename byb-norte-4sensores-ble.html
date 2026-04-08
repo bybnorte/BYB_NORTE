@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>BYB-NORTE · Monitor de Temperatura</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+:root{
+  --navy:#1a3a6b;--navy2:#253f7a;--blue:#1565c0;--blue-l:#1e88e5;
+  --accent:#f5c800;--ok:#22c55e;--warn:#f59e0b;--crit:#ef4444;--dis:#94a3b8;
+  --ble:#8b5cf6;
+  --bg:#dde3ed;--card:#fff;--border:#c8d4e8;
+  --text:#1a2940;--text2:#4a5a7a;--text3:#8a9ab8;
+  --mono:'IBM Plex Mono',monospace;--sans:'IBM Plex Sans',sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);background:var(--bg);color:var(--text);min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:10px}
+.frame{width:100%;max-width:1400px;background:#fff;border-radius:8px;box-shadow:0 8px 40px rgba(0,0,0,.18);overflow:hidden;display:flex;flex-direction:column}
+header{background:#fff;display:flex;align-items:center;justify-content:space-between;padding:8px 18px;border-bottom:3px solid var(--navy);height:64px}
+.logo-img{height:48px;object-fit:contain}
+.h-title{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--navy);text-align:center;letter-spacing:1.5px;text-transform:uppercase;flex:1;padding:0 14px}
+.h-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.byb-tag{font-family:var(--mono);font-size:12px;font-weight:600;color:var(--navy)}
+.byb-tag em{font-style:normal;color:var(--accent);background:var(--navy);padding:1px 5px;border-radius:3px;margin-left:1px}
+.clock{font-family:var(--mono);font-size:15px;font-weight:600;color:var(--navy2);letter-spacing:2px;min-width:78px;text-align:right}
+.btn-pdf{background:var(--navy);color:#fff;border:none;padding:6px 13px;border-radius:5px;font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:1px;cursor:pointer}
+.btn-pdf:hover{background:var(--navy2)}
+
+/* ── BOTONES DE CONEXIÓN ── */
+.btn-conn-group{display:flex;gap:6px;align-items:center}
+.btn-conn{border:none;padding:6px 12px;border-radius:5px;font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:1px;cursor:pointer;transition:all .2s}
+.btn-conn.off   {background:#e2e8f0;color:var(--navy)}
+.btn-conn.on-usb{background:#dcfce7;color:#166534}
+.btn-conn.on-ble{background:#ede9fe;color:#5b21b6}
+.btn-conn.busy  {background:#fef3c7;color:#92400e}
+.btn-conn:disabled{opacity:.5;cursor:not-allowed}
+
+/* STATUS BAR */
+.sbar{background:var(--navy);display:flex;align-items:center;gap:16px;padding:0 18px;height:30px;font-family:var(--mono);font-size:9.5px;color:#7a9ab8;letter-spacing:.5px;flex-wrap:wrap}
+.sp{display:flex;align-items:center;gap:5px}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--dis);flex-shrink:0}
+.dot.ok{background:var(--ok);box-shadow:0 0 5px var(--ok)}
+.dot.pulse{animation:pulse 1.2s ease-in-out infinite}
+.dot.warn{background:var(--warn)}
+.dot.crit{background:var(--crit);box-shadow:0 0 5px var(--crit)}
+.dot.sim{background:#a78bfa}
+.dot.ble{background:var(--ble);box-shadow:0 0 5px var(--ble)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* BANNERS */
+.banner{border-bottom:1px solid;padding:6px 18px;font-family:var(--mono);font-size:9.5px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+.banner.hidden{display:none}
+.banner-usb{background:#fef3c7;border-color:#fbbf24;color:#92400e}
+.banner-ble{background:#ede9fe;border-color:#8b5cf6;color:#5b21b6}
+
+/* MAIN */
+.main{display:grid;grid-template-columns:1fr 278px;flex:1;background:var(--bg)}
+.left{display:flex;flex-direction:column;gap:10px;padding:12px}
+.cg{display:grid;grid-template-columns:1fr 1fr 1.12fr;grid-template-rows:205px 205px;gap:10px}
+.sc{background:#fff;border:1px solid var(--border);border-radius:6px;padding:9px 11px;display:flex;flex-direction:column;overflow:hidden;transition:border .2s}
+.sc.warn{border-left:3px solid var(--warn)}
+.sc.crit{border-left:3px solid var(--crit);animation:bcrit 1s infinite}
+.sc.dis{opacity:.45}
+.cc{grid-column:3;grid-row:1/span 2}
+@keyframes bcrit{0%,100%{border-left-color:var(--crit)}50%{border-left-color:#7f1d1d}}
+.sc-head{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:4px}
+.sc-lbl{font-family:var(--mono);font-size:9px;font-weight:600;color:var(--blue);letter-spacing:1px;text-transform:uppercase;line-height:1.4}
+.sc-type{font-family:var(--mono);font-size:7.5px;color:var(--text3);letter-spacing:.5px;margin-top:1px}
+.sc-val{font-family:var(--mono);font-size:22px;font-weight:600;color:var(--text);line-height:1;text-align:right}
+.sc-val .u{font-size:11px;font-weight:400;color:var(--text3)}
+.sc-val .src-tag{font-size:7px;display:block;text-align:right;letter-spacing:.5px}
+.src-sim{color:#a78bfa}
+.src-usb{color:#22c55e}
+.src-ble{color:#8b5cf6}
+
+/* TABLE */
+.tbl-card{background:#fff;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.tbl-hdr{background:var(--navy);padding:7px 14px;font-family:var(--mono);font-size:9.5px;font-weight:600;color:#fff;letter-spacing:1.5px;text-transform:uppercase;display:flex;justify-content:space-between;align-items:center}
+.tbl-hdr span{font-size:8.5px;color:#7a9ab8;font-weight:400;letter-spacing:.5px}
+table.temps{width:100%;border-collapse:collapse;font-size:11px}
+table.temps thead tr{background:#f0f4fa}
+table.temps thead th{font-family:var(--mono);font-size:8.5px;font-weight:600;color:var(--navy);letter-spacing:1px;text-transform:uppercase;padding:6px 10px;text-align:left;border-bottom:1px solid var(--border)}
+table.temps thead th:not(:first-child){text-align:center}
+table.temps tbody tr{border-bottom:1px solid #f1f5f9;transition:background .1s}
+table.temps tbody tr:hover{background:#f8faff}
+table.temps tbody tr:last-child{border-bottom:none}
+table.temps td{padding:5px 10px;font-family:var(--mono);font-size:10.5px;color:var(--text)}
+table.temps td.tc{color:var(--text3);font-size:9.5px}
+table.temps td.v-ok{color:#15803d;font-weight:600}
+table.temps td.v-warn{color:#b45309;font-weight:600}
+table.temps td.v-crit{color:#dc2626;font-weight:600}
+table.temps td.v-dis{color:var(--dis)}
+.tbl-scroll{max-height:165px;overflow-y:auto}
+.tbl-scroll::-webkit-scrollbar{width:4px}
+.tbl-scroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.tbl-empty{padding:20px;text-align:center;font-family:var(--mono);font-size:10px;color:var(--text3)}
+
+/* RIGHT PANEL */
+.rp{background:#fff;border-left:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+.ps{padding:11px 13px;border-bottom:1px solid #edf2f8}
+.ps:last-child{border-bottom:none;flex:1}
+.pt{font-family:var(--mono);font-size:8.5px;font-weight:600;color:var(--navy);letter-spacing:2px;text-transform:uppercase;margin-bottom:9px;padding-bottom:6px;border-bottom:1px solid #edf2f8}
+.sr{display:grid;grid-template-columns:24px 1fr 30px 58px;align-items:center;gap:5px;padding:5px 0;border-bottom:1px solid #f4f7fb}
+.sr:last-child{border-bottom:none}
+.sbg{font-family:var(--mono);font-size:8.5px;font-weight:600;background:var(--navy);color:var(--accent);width:24px;height:19px;border-radius:3px;display:flex;align-items:center;justify-content:center}
+.sni{font-family:var(--sans);font-size:10px;font-weight:500;color:var(--text);border:1px solid transparent;background:transparent;width:100%;padding:2px 3px;border-radius:3px}
+.sni:hover{border-color:var(--border)}
+.sni:focus{border-color:var(--blue-l);outline:none;background:#f0f6ff}
+.tw{position:relative;width:28px;height:15px}
+.tw input{opacity:0;width:0;height:0;position:absolute}
+.tt{position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:8px;cursor:pointer;transition:background .2s}
+.tt::after{content:'';position:absolute;width:11px;height:11px;background:#fff;border-radius:50%;top:2px;left:2px;transition:transform .2s}
+.tw input:checked + .tt{background:var(--ok)}
+.tw input:checked + .tt::after{transform:translateX(13px)}
+.badge{font-family:var(--mono);font-size:9px;font-weight:600;padding:2px 5px;border-radius:3px;text-align:center;min-width:48px}
+.b-ok  {background:#dcfce7;color:#15803d}
+.b-warn{background:#fef3c7;color:#b45309}
+.b-crit{background:#fee2e2;color:#dc2626;animation:bcrit 1s infinite}
+.b-dis {background:#f1f5f9;color:#94a3b8}
+.ag{display:grid;grid-template-columns:24px 1fr 38px 38px;align-items:center;gap:4px}
+.ah{font-family:var(--mono);font-size:7.5px;font-weight:600;color:var(--text3);letter-spacing:.5px;text-transform:uppercase}
+.ai{font-family:var(--mono);font-size:10px;font-weight:600;border-radius:3px;border:1px solid var(--border);padding:3px 4px;text-align:center;width:100%;outline:none}
+.ai.y{color:#b45309;background:#fffbeb}
+.ai.r{color:#dc2626;background:#fff5f5}
+.ai:focus{border-color:var(--blue-l)}
+.rec-row{display:flex;gap:6px;align-items:center;margin-bottom:7px}
+.rec-row select{flex:1;font-family:var(--mono);font-size:9.5px;border:1px solid var(--border);border-radius:4px;padding:4px 6px;background:#fff;color:var(--text);outline:none}
+.btn{font-family:var(--mono);font-size:9px;font-weight:600;letter-spacing:1px;border:none;padding:5px 11px;border-radius:4px;cursor:pointer;white-space:nowrap}
+.btn-s{background:var(--navy);color:#fff}
+.btn-d{background:#dc2626;color:#fff}
+.ri{display:flex;align-items:center;gap:5px;font-family:var(--mono);font-size:9px;color:var(--text3);margin-bottom:6px}
+.log{height:120px;overflow-y:auto;background:#f8faff;border-radius:4px;padding:5px 7px;border:1px solid #e8eef8}
+.log::-webkit-scrollbar{width:3px}
+.log::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.le{font-family:var(--mono);font-size:8.5px;padding:1px 0;border-bottom:1px solid #f0f4fa;line-height:1.4}
+.le:last-child{border-bottom:none}
+.l-ok{color:#4ade80}.l-warn{color:var(--warn)}.l-crit{color:var(--crit)}.l-info{color:#60a5fa}.l-serial{color:#22c55e}.l-ble{color:#a78bfa}
+.sum-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid #f0f4fa}
+.sum-row:last-child{border-bottom:none}
+.s-ok{border-left:2px solid var(--ok);padding-left:6px}
+.s-warn{border-left:2px solid var(--warn);padding-left:6px}
+.s-crit{border-left:2px solid var(--crit);padding-left:6px}
+.s-dis{background:#f8fafc;border-left:3px solid var(--dis);opacity:.6}
+.sum-n{font-family:var(--sans);font-size:10.5px}
+.sum-v{font-family:var(--mono);font-size:12px;font-weight:600}
+footer{background:var(--navy);display:flex;align-items:center;justify-content:space-between;padding:0 18px;height:28px;font-family:var(--mono);font-size:9px;color:#4a6a8a;letter-spacing:.5px}
+.legend{display:flex;gap:8px;flex-wrap:wrap;font-size:9px;color:var(--text2);font-family:var(--mono)}
+.legend span{display:flex;align-items:center;gap:3px}
+.ld{width:8px;height:8px;border-radius:2px;flex-shrink:0}
+.mode-tag{font-family:var(--mono);font-size:8px;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.5px}
+.mode-sim{background:#ede9fe;color:#5b21b6}
+.mode-usb{background:#dcfce7;color:#166534}
+.mode-ble{background:#ddd6fe;color:#4c1d95}
+</style>
+</head>
+<body>
+<div class="frame" id="frame">
+<header>
+  <img src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='48' viewBox='0 0 120 48'%3E%3Crect width='120' height='48' fill='%231a3a6b' rx='4'/%3E%3Ctext x='60' y='20' font-family='monospace' font-size='11' font-weight='bold' fill='%23f5c800' text-anchor='middle'%3EBYB%3C/text%3E%3Ctext x='60' y='34' font-family='monospace' font-size='9' fill='%23ffffff' text-anchor='middle'%3ENORTE%3C/text%3E%3C/svg%3E" class="logo-img" alt="BYB-Norte">
+  <div class="h-title">SISTEMA DE MONITOREO DE TEMPERATURA INDUSTRIAL BYB-NORTE — COPIAPÓ</div>
+  <div class="h-right">
+    <div class="byb-tag">byb<em>norte</em></div>
+    <span class="mode-tag mode-sim" id="mode-tag">● SIMULACIÓN</span>
+
+    <!-- GRUPO DE BOTONES DE CONEXIÓN -->
+    <div class="btn-conn-group">
+      <button class="btn-conn off" id="btn-ble"  onclick="toggleBLE()"    title="Conectar por Bluetooth BLE">📶 BLE</button>
+      <button class="btn-conn off" id="btn-usb"  onclick="toggleSerial()" title="Conectar por cable USB Serial">⚡ USB</button>
+    </div>
+
+    <div class="clock" id="clock">--:--:--</div>
+    <button class="btn-pdf" onclick="exportPDF()">⬇ PDF</button>
+  </div>
+</header>
+
+<!-- Banner: sin soporte USB -->
+<div class="banner banner-usb hidden" id="banner-usb">
+  ⚠ Tu navegador no soporta Web Serial API. Usa <strong>Google Chrome</strong> o <strong>Microsoft Edge</strong> versión 89+.
+  <span style="cursor:pointer;font-weight:600" onclick="this.parentElement.classList.add('hidden')">✕</span>
+</div>
+
+<!-- Banner: sin soporte BLE -->
+<div class="banner banner-ble hidden" id="banner-ble">
+  📶 Tu navegador no soporta Web Bluetooth. Usa <strong>Chrome</strong> o <strong>Edge</strong> con HTTPS o localhost. Firefox/Safari no son compatibles.
+  <span style="cursor:pointer;font-weight:600" onclick="this.parentElement.classList.add('hidden')">✕</span>
+</div>
+
+<div class="sbar">
+  <div class="sp"><div class="dot sim pulse" id="dot-conn"></div><span id="lbl-conn">MODO SIMULACIÓN</span></div>
+  <div class="sp"><div class="dot" id="dot-rec"></div><span id="lbl-rec">REGISTRO DETENIDO</span></div>
+  <div class="sp" style="margin-left:auto">ÚLTIMA LECTURA: <span id="last-read" style="color:#94a3b8;margin-left:4px">—</span></div>
+  <div class="sp">LECTURAS: <span id="read-count" style="color:#94a3b8;margin-left:4px">0</span></div>
+</div>
+
+<div class="main">
+  <div class="left" id="left-col">
+    <div class="cg" id="chart-grid"></div>
+    <div class="tbl-card">
+      <div class="tbl-hdr">
+        TABLA DE REGISTROS (según intervalo)
+        <span id="tbl-count">Inicia el registro para capturar datos</span>
+      </div>
+      <div id="tbl-empty" class="tbl-empty">No hay registros aún. Presiona INICIAR para comenzar.</div>
+      <div class="tbl-scroll" id="tbl-scroll" style="display:none">
+        <table class="temps">
+          <thead><tr>
+            <th style="width:75px">HORA</th>
+            <th id="th0">S1</th><th id="th1">S2</th>
+            <th id="th2">S3</th><th id="th3">S4</th>
+            <th style="width:55px">ESTADO</th>
+            <th style="width:45px">MODO</th>
+          </tr></thead>
+          <tbody id="tbl-rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="rp">
+    <div class="ps">
+      <div class="pt">CONFIGURACIÓN DE SENSORES</div>
+      <div id="sensor-config"></div>
+    </div>
+    <div class="ps">
+      <div class="pt">AJUSTE DE ALERTAS (°C)</div>
+      <div class="ag">
+        <div></div><div class="ah">SENSOR</div>
+        <div class="ah" style="text-align:center;color:#b45309">⚠ AMAR.</div>
+        <div class="ah" style="text-align:center;color:#dc2626">✖ ROJA</div>
+      </div>
+      <div id="alert-config"></div>
+    </div>
+    <div class="ps">
+      <div class="pt">REGISTRO DE DATOS</div>
+      <div class="rec-row">
+        <select id="interval-sel">
+          <option value="0.5">Cada 30 seg</option>
+          <option value="1">Cada 1 min</option>
+          <option value="5">Cada 5 min</option>
+          <option value="10">Cada 10 min</option>
+          <option value="15">Cada 15 min</option>
+          <option value="30">Cada 30 min</option>
+          <option value="60">Cada 60 min</option>
+        </select>
+        <button class="btn btn-s" id="btn-rec" onclick="toggleRec()">INICIAR</button>
+      </div>
+      <div class="ri"><div class="dot" id="dot-rec2"></div><span id="rec-txt">Sin registro activo</span></div>
+      <div class="pt" style="margin-top:4px">LOG DE EVENTOS</div>
+      <div class="log" id="log"></div>
+    </div>
+    <div class="ps">
+      <div class="pt">RESUMEN DE ESTADO</div>
+      <div id="summary"></div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <span>BYB-NORTE SISTEMA DE MONITOREO v3.0 — 4x PT100 3-wire MAX31865 — BLE + USB + SIM</span>
+  <span id="footer-date">—</span>
+  <span>COPIAPÓ, CHILE</span>
+</footer>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+//  CONFIGURACIÓN DE SENSORES
+// ═══════════════════════════════════════════════════════════
+const SENSORS = [
+  {id:'S1', name:'Rod. Lado Acople (AC)',     type:'PT100', enabled:true, alertY:65, alertR:85, base:45, color:'#1565c0'},
+  {id:'S2', name:'Rod. Lado Ventilador (FV)', type:'PT100', enabled:true, alertY:65, alertR:85, base:55, color:'#f59e0b'},
+  {id:'S3', name:'Bobinado Fase A (WA)',       type:'PT100', enabled:true, alertY:65, alertR:85, base:35, color:'#dc2626'},
+  {id:'S4', name:'Carcasa Motor (MC)',         type:'PT100', enabled:true, alertY:65, alertR:85, base:60, color:'#16a34a'},
+];
+
+const MAX_PTS = 25;
+const MAX_PTS_COMBINED = 2000;
+const charts = {};
+let readings = 0, isRec = false;
+let simV = SENSORS.map(s=>s.base), simT = SENSORS.map(()=>0);
+let prevSt = SENSORS.map(()=>'ok'), tableRows = [], recLog = [], recTimer = null;
+let lastVals = [null,null,null,null];
+let recHistoryLabels = [];
+let recHistoryData = SENSORS.map(()=>[]);
+
+// ═══════════════════════════════════════════════════════════
+//  ESTADO DE CONEXIÓN
+//  connMode: 'sim' | 'usb' | 'ble'
+// ═══════════════════════════════════════════════════════════
+let connMode = 'sim';
+
+// ─── USB SERIAL ──────────────────────────────────────────────
+let serialPort = null, serialReader = null;
+let lineBuffer = '';
+
+if (!('serial' in navigator)) {
+  document.getElementById('banner-usb').classList.remove('hidden');
+  document.getElementById('btn-usb').disabled = true;
+  document.getElementById('btn-usb').title = 'Web Serial no disponible en este navegador';
+}
+
+async function toggleSerial() {
+  if (connMode === 'usb') {
+    await disconnectSerial();
+  } else {
+    // Desconectar BLE si está activo
+    if (connMode === 'ble') await disconnectBLE();
+    await connectSerial();
+  }
+}
+
+async function connectSerial() {
+  try {
+    const btn = document.getElementById('btn-usb');
+    btn.className = 'btn-conn busy';
+    btn.textContent = '⏳ USB...';
+
+    serialPort = await navigator.serial.requestPort();
+    await serialPort.open({ baudRate: 115200 });
+
+    connMode = 'usb';
+    setConnectedState('usb');
+    addLog('ESP32 conectado por USB Serial (115200 baud)', 'serial');
+    readSerialStream();
+  } catch(e) {
+    document.getElementById('btn-usb').className = 'btn-conn off';
+    document.getElementById('btn-usb').textContent = '⚡ USB';
+    if (e.name !== 'NotFoundError') addLog('Error USB: ' + e.message, 'crit');
+  }
+}
+
+async function disconnectSerial() {
+  connMode = 'sim';
+  try {
+    if (serialReader) { await serialReader.cancel(); serialReader = null; }
+    if (serialPort)   { await serialPort.close(); serialPort = null; }
+  } catch(e) {}
+  setDisconnectedState();
+  addLog('USB desconectado. Volviendo a simulación.', 'warn');
+}
+
+async function readSerialStream() {
+  const textDecoder = new TextDecoderStream();
+  serialPort.readable.pipeTo(textDecoder.writable);
+  serialReader = textDecoder.readable.getReader();
+  try {
+    while (true) {
+      const { value, done } = await serialReader.read();
+      if (done) break;
+      lineBuffer += value;
+      const lines = lineBuffer.split('\n');
+      lineBuffer = lines.pop();
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t || !t.startsWith('{')) continue;
+        try {
+          const data = JSON.parse(t);
+          if (data.status || data.ble) { addLog('ESP32: ' + (data.status||data.ble), 'serial'); continue; }
+          processDeviceData(data, 'USB');
+        } catch(e) {}
+      }
+    }
+  } catch(e) {
+    if (connMode === 'usb') {
+      addLog('USB desconectado inesperadamente.', 'crit');
+      await disconnectSerial();
+    }
+  }
+}
+
+// ─── BLE ─────────────────────────────────────────────────────
+// Nordic UART Service (NUS)
+const BLE_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const BLE_CHAR_TX_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
+
+let bleDevice = null, bleChar = null;
+let bleBuffer = '';
+
+if (!('bluetooth' in navigator)) {
+  document.getElementById('banner-ble').classList.remove('hidden');
+  document.getElementById('btn-ble').disabled = true;
+  document.getElementById('btn-ble').title = 'Web Bluetooth no disponible';
+}
+
+async function toggleBLE() {
+  if (connMode === 'ble') {
+    await disconnectBLE();
+  } else {
+    if (connMode === 'usb') await disconnectSerial();
+    await connectBLE();
+  }
+}
+
+async function connectBLE() {
+  try {
+    const btn = document.getElementById('btn-ble');
+    btn.className = 'btn-conn busy';
+    btn.textContent = '⏳ BLE...';
+
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [{ name: 'BYB-NORTE-ESP32' }],
+      optionalServices: [BLE_SERVICE_UUID]
+    });
+
+    bleDevice.addEventListener('gattserverdisconnected', onBLEDisconnect);
+
+    const server  = await bleDevice.gatt.connect();
+    const service = await server.getPrimaryService(BLE_SERVICE_UUID);
+    bleChar = await service.getCharacteristic(BLE_CHAR_TX_UUID);
+
+    await bleChar.startNotifications();
+    bleChar.addEventListener('characteristicvaluechanged', onBLEData);
+
+    connMode = 'ble';
+    setConnectedState('ble');
+    addLog('ESP32 conectado por BLE — ' + bleDevice.name, 'ble');
+  } catch(e) {
+    document.getElementById('btn-ble').className = 'btn-conn off';
+    document.getElementById('btn-ble').textContent = '📶 BLE';
+    if (e.name !== 'NotFoundError') addLog('Error BLE: ' + e.message, 'crit');
+  }
+}
+
+async function disconnectBLE() {
+  connMode = 'sim';
+  try {
+    if (bleChar) { await bleChar.stopNotifications(); bleChar = null; }
+    if (bleDevice && bleDevice.gatt.connected) bleDevice.gatt.disconnect();
+  } catch(e) {}
+  bleDevice = null; bleBuffer = '';
+  setDisconnectedState();
+  addLog('BLE desconectado. Volviendo a simulación.', 'warn');
+}
+
+function onBLEDisconnect() {
+  if (connMode !== 'ble') return;
+  addLog('BLE desconectado inesperadamente.', 'crit');
+  bleDevice = null; bleChar = null; bleBuffer = '';
+  connMode = 'sim';
+  setDisconnectedState();
+}
+
+function onBLEData(event) {
+  const decoder = new TextDecoder();
+  const chunk = decoder.decode(event.target.value);
+  bleBuffer += chunk;
+  const lines = bleBuffer.split('\n');
+  bleBuffer = lines.pop();
+  for (const line of lines) {
+    const t = line.trim();
+    if (!t || !t.startsWith('{')) continue;
+    try {
+      const data = JSON.parse(t);
+      if (data.status || data.ble) { addLog('ESP32 BLE: ' + (data.status||data.ble), 'ble'); continue; }
+      processDeviceData(data, 'BLE');
+    } catch(e) {}
+  }
+}
+
+// ─── ESTADO UI ────────────────────────────────────────────────
+function setConnectedState(mode) {
+  const dotConn = document.getElementById('dot-conn');
+  const lblConn = document.getElementById('lbl-conn');
+  const modeTag = document.getElementById('mode-tag');
+  const btnBLE  = document.getElementById('btn-ble');
+  const btnUSB  = document.getElementById('btn-usb');
+
+  if (mode === 'usb') {
+    dotConn.className = 'dot ok pulse';
+    lblConn.textContent = 'ESP32 CONECTADO (USB)';
+    modeTag.className = 'mode-tag mode-usb';
+    modeTag.textContent = '● DATOS REALES USB';
+    btnUSB.className = 'btn-conn on-usb';
+    btnUSB.textContent = '⚡ DESCONECTAR';
+    btnBLE.className = 'btn-conn off';
+    btnBLE.textContent = '📶 BLE';
+  } else if (mode === 'ble') {
+    dotConn.className = 'dot ble pulse';
+    lblConn.textContent = 'ESP32 CONECTADO (BLE)';
+    modeTag.className = 'mode-tag mode-ble';
+    modeTag.textContent = '● DATOS REALES BLE';
+    btnBLE.className = 'btn-conn on-ble';
+    btnBLE.textContent = '📶 DESCONECTAR';
+    btnUSB.className = 'btn-conn off';
+    btnUSB.textContent = '⚡ USB';
+  }
+}
+
+function setDisconnectedState() {
+  const dotConn = document.getElementById('dot-conn');
+  const lblConn = document.getElementById('lbl-conn');
+  const modeTag = document.getElementById('mode-tag');
+  const btnBLE  = document.getElementById('btn-ble');
+  const btnUSB  = document.getElementById('btn-usb');
+  dotConn.className = 'dot sim pulse';
+  lblConn.textContent = 'MODO SIMULACIÓN';
+  modeTag.className = 'mode-tag mode-sim';
+  modeTag.textContent = '● SIMULACIÓN';
+  if (!btnBLE.disabled) { btnBLE.className = 'btn-conn off'; btnBLE.textContent = '📶 BLE'; }
+  if (!btnUSB.disabled) { btnUSB.className = 'btn-conn off'; btnUSB.textContent = '⚡ USB'; }
+}
+
+// ─── PROCESO DATO DEL ESP32 ───────────────────────────────────
+function processDeviceData(data, src) {
+  const vals = [
+    data.s1 != null ? parseFloat(data.s1) : null,
+    data.s2 != null ? parseFloat(data.s2) : null,
+    data.s3 != null ? parseFloat(data.s3) : null,
+    data.s4 != null ? parseFloat(data.s4) : null,
+  ];
+  const tl = data.t || new Date().toLocaleTimeString('es-CL');
+  processReading(vals, tl, src);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SIMULACIÓN
+// ═══════════════════════════════════════════════════════════
+function simSensors() {
+  return SENSORS.map((s,i) => {
+    if (!s.enabled) return null;
+    simT[i] += (Math.random() - 0.48) * 0.4;
+    simT[i] = Math.max(-1, Math.min(1, simT[i]));
+    simV[i] += simT[i] + (Math.random() - 0.5) * 0.8;
+    simV[i] = Math.max(20, Math.min(98, simV[i]));
+    return parseFloat(simV[i].toFixed(1));
+  });
+}
+
+let firstRead = true;
+function simLoop() {
+  if (connMode !== 'sim') return;
+  const vals = simSensors();
+  const tl = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  processReading(vals, tl, 'SIM');
+  if (firstRead) { addLog('Modo simulación activo. Conecta el ESP32 (BLE o USB) para datos reales.','info'); firstRead=false; }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PROCESAMIENTO COMÚN
+// ═══════════════════════════════════════════════════════════
+function processReading(vals, tl, src) {
+  lastVals = vals;
+  readings++;
+  document.getElementById('last-read').textContent = tl;
+  document.getElementById('read-count').textContent = readings;
+  updateCharts(vals, tl);
+  updateDisplay(vals, src);
+  updateSummary(vals);
+  checkAlerts(vals);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  RELOJ
+// ═══════════════════════════════════════════════════════════
+function tick(){
+  const n=new Date();
+  document.getElementById('clock').textContent=n.toLocaleTimeString('es-CL');
+  document.getElementById('footer-date').textContent=n.toLocaleDateString('es-CL',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+}
+setInterval(tick,1000);tick();
+
+// ═══════════════════════════════════════════════════════════
+//  LOG
+// ═══════════════════════════════════════════════════════════
+function addLog(msg, type='info'){
+  const b=document.getElementById('log');
+  const t=new Date().toLocaleTimeString('es-CL');
+  const d=document.createElement('div');
+  d.className='le l-'+type;
+  d.textContent='['+t+'] '+msg;
+  b.appendChild(d);b.scrollTop=b.scrollHeight;
+  if(b.children.length>100)b.removeChild(b.children[0]);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  GRÁFICOS
+// ═══════════════════════════════════════════════════════════
+const thPlugin={
+  id:'thl',
+  afterDraw(c){
+    const cfg=c.options.plugins.thl;if(!cfg)return;
+    const{ctx,chartArea,scales}=c;if(!chartArea||!scales.y)return;
+    [['alertY','#f59e0b88'],['alertR','#ef444488']].forEach(([k,col])=>{
+      const y=scales.y.getPixelForValue(cfg[k]);
+      if(y<chartArea.top||y>chartArea.bottom)return;
+      ctx.save();ctx.setLineDash([3,3]);ctx.strokeStyle=col;ctx.lineWidth=1;
+      ctx.beginPath();ctx.moveTo(chartArea.left,y);ctx.lineTo(chartArea.right,y);ctx.stroke();ctx.restore();
+    });
+  }
+};
+Chart.register(thPlugin);
+
+function buildCharts(){
+  const grid=document.getElementById('chart-grid');grid.innerHTML='';
+  SENSORS.forEach((s,i)=>{
+    const card=document.createElement('div');
+    card.className='sc';card.id='sc-'+i;
+    card.innerHTML=
+      '<div class="sc-head">'+
+        '<div><div class="sc-lbl">'+s.id+': '+s.name+'</div><div class="sc-type">'+s.type+'</div></div>'+
+        '<div><div class="sc-val" id="val-'+i+'">--<span class="u">°C</span></div><span class="src-tag src-sim" id="src-'+i+'">SIM</span></div>'+
+      '</div>'+
+      '<div style="position:relative;flex:1;min-height:0"><canvas id="ch-'+i+'"></canvas></div>';
+    grid.appendChild(card);
+    const ctx=document.getElementById('ch-'+i).getContext('2d');
+    charts[i]=new Chart(ctx,{
+      type:'line',
+      data:{labels:[],datasets:[{data:[],borderColor:s.color,backgroundColor:s.color+'22',fill:true,tension:0.3,pointRadius:0,borderWidth:1.5}]},
+      options:{responsive:true,maintainAspectRatio:false,animation:false,
+        plugins:{legend:{display:false},thl:{alertY:s.alertY,alertR:s.alertR}},
+        scales:{x:{display:false},y:{min:0,max:100,ticks:{font:{family:'IBM Plex Mono',size:8},color:'#94a3b8',stepSize:25},grid:{color:'#f1f5f9',lineWidth:.5}}}}
+    });
+  });
+  // Gráfico combinado
+  const cc=document.createElement('div');cc.className='sc cc';
+  cc.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px"><span class="sc-lbl">DATOS HISTÓRICOS</span><div class="legend" id="leg"></div></div><div style="position:relative;flex:1;min-height:0"><canvas id="ch-c"></canvas></div>';
+  grid.appendChild(cc);
+  const cx=document.getElementById('ch-c').getContext('2d');
+  charts['c']=new Chart(cx,{
+    type:'line',
+    data:{labels:[],datasets:SENSORS.map(s=>({label:s.id,data:[],borderColor:s.color,fill:false,tension:0.3,pointRadius:0,borderWidth:1.5}))},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{font:{family:'IBM Plex Mono',size:7.5},color:'#94a3b8',maxTicksLimit:6},grid:{color:'#f1f5f9',lineWidth:.5}},
+        y:{min:0,max:100,ticks:{font:{family:'IBM Plex Mono',size:8},color:'#94a3b8',stepSize:20},grid:{color:'#f1f5f9',lineWidth:.5}}
+      }}
+  });
+  const leg=document.getElementById('leg');
+  leg.innerHTML=SENSORS.map(s=>'<span><span class="ld" style="background:'+s.color+'"></span>'+s.id+' ('+s.type+')</span>').join('');
+}
+
+function updateCharts(vals,tl){
+  SENSORS.forEach((s,i)=>{
+    const c=charts[i];
+    c.data.labels.push(tl);c.data.datasets[0].data.push(vals[i]);
+    if(c.data.labels.length>MAX_PTS){c.data.labels.shift();c.data.datasets[0].data.shift();}
+    c.options.plugins.thl={alertY:s.alertY,alertR:s.alertR};
+    c.update('none');
+  });
+  if(isRec){
+    recHistoryLabels.push(tl);
+    SENSORS.forEach((s,i)=>recHistoryData[i].push(vals[i]));
+    const N=recHistoryLabels.length;
+    const step=N>500?Math.floor(N/500):1;
+    const cc=charts['c'];
+    cc.data.labels=recHistoryLabels.filter((_,j)=>j%step===0);
+    SENSORS.forEach((s,i)=>{cc.data.datasets[i].data=recHistoryData[i].filter((_,j)=>j%step===0);});
+    cc.update('none');
+  } else {
+    const cc=charts['c'];
+    cc.data.labels.push(tl);
+    SENSORS.forEach((s,i)=>{cc.data.datasets[i].data.push(vals[i]);if(cc.data.datasets[i].data.length>MAX_PTS)cc.data.datasets[i].data.shift();});
+    if(cc.data.labels.length>MAX_PTS)cc.data.labels.shift();
+    cc.update('none');
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DISPLAY
+// ═══════════════════════════════════════════════════════════
+function updateDisplay(vals, src){
+  SENSORS.forEach((s,i)=>{
+    const v=vals[i];
+    const d=document.getElementById('val-'+i);
+    const card=document.getElementById('sc-'+i);
+    const bdg=document.getElementById('bdg-'+i);
+    const srcEl=document.getElementById('src-'+i);
+    if(srcEl){
+      srcEl.textContent = src;
+      srcEl.className = 'src-tag ' + (src==='BLE'?'src-ble':src==='USB'?'src-usb':'src-sim');
+    }
+    if(!s.enabled||v===null){
+      d.innerHTML='--<span class="u">°C</span>';
+      card.className='sc dis';
+      if(bdg){bdg.className='badge b-dis';bdg.textContent='DIS';}
+      return;
+    }
+    d.innerHTML=v.toFixed(1)+'<span class="u">°C</span>';
+    if(v>=s.alertR){d.style.color='#dc2626';card.className='sc crit';if(bdg){bdg.className='badge b-crit';bdg.textContent=v.toFixed(1)+'°';}}
+    else if(v>=s.alertY){d.style.color='#d97706';card.className='sc warn';if(bdg){bdg.className='badge b-warn';bdg.textContent=v.toFixed(1)+'°';}}
+    else{d.style.color='var(--text)';card.className='sc';if(bdg){bdg.className='badge b-ok';bdg.textContent=v.toFixed(1)+'°';}}
+  });
+}
+
+function updateSummary(vals){
+  const box=document.getElementById('summary');box.innerHTML='';
+  SENSORS.forEach((s,i)=>{
+    const v=vals[i];const row=document.createElement('div');
+    let cls='sum-row s-ok',icon='✓',vstr=v!=null?v.toFixed(1)+'°C':'—';
+    if(!s.enabled){cls='sum-row s-dis';icon='○';vstr='DESHABILITADO';}
+    else if(v===null){cls='sum-row s-dis';icon='○';}
+    else if(v>=s.alertR){cls='sum-row s-crit';icon='✖';}
+    else if(v>=s.alertY){cls='sum-row s-warn';icon='⚠';}
+    row.className=cls;
+    row.innerHTML='<span class="sum-n">'+icon+' '+s.id+': '+s.name.split(' ').slice(0,3).join(' ')+'</span><span class="sum-v">'+vstr+'</span>';
+    box.appendChild(row);
+  });
+}
+
+function checkAlerts(vals){
+  SENSORS.forEach((s,i)=>{
+    const v=vals[i];if(!s.enabled||v===null)return;
+    let st=v>=s.alertR?'crit':v>=s.alertY?'warn':'ok';
+    if(st!==prevSt[i]){
+      if(st==='crit')addLog('CRÍTICO: '+s.id+' → '+v.toFixed(1)+'°C (límite '+s.alertR+'°C)','crit');
+      else if(st==='warn')addLog('ALERTA: '+s.id+' → '+v.toFixed(1)+'°C (umbral '+s.alertY+'°C)','warn');
+      else addLog(s.id+' regresó a normal: '+v.toFixed(1)+'°C','ok');
+      prevSt[i]=st;
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CONFIG SENSORES + ALERTAS
+// ═══════════════════════════════════════════════════════════
+function buildSensorConfig(){
+  const c=document.getElementById('sensor-config');c.innerHTML='';
+  SENSORS.forEach((s,i)=>{
+    const r=document.createElement('div');r.className='sr';r.id='cfg-'+i;
+    r.innerHTML='<div class="sbg">'+s.id+'</div><input class="sni" value="'+s.name+'" id="sni-'+i+'" onchange="renameSensor('+i+',this.value)"><label class="tw"><input type="checkbox" '+(s.enabled?'checked':'')+' onchange="toggleSensor('+i+',this.checked)"><div class="tt"></div></label><div class="badge b-ok" id="bdg-'+i+'">—</div>';
+    c.appendChild(r);
+  });
+  SENSORS.forEach((s,i)=>{const th=document.getElementById('th'+i);if(th)th.textContent=s.id+' ('+s.type+')';});
+}
+function buildAlertConfig(){
+  const c=document.getElementById('alert-config');c.innerHTML='';
+  SENSORS.forEach((s,i)=>{
+    const r=document.createElement('div');r.className='ag';r.style.marginTop='5px';
+    r.innerHTML='<div class="sbg" style="margin:0">'+s.id+'</div><div style="font-family:var(--mono);font-size:9px;color:var(--text2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" id="aln-'+i+'">'+s.name+'</div><input class="ai y" type="number" value="'+s.alertY+'" id="ay-'+i+'" onchange="setAlert('+i+',\'y\',this.value)"><input class="ai r" type="number" value="'+s.alertR+'" id="ar-'+i+'" onchange="setAlert('+i+',\'r\',this.value)">';
+    c.appendChild(r);
+  });
+}
+function toggleSensor(i,en){SENSORS[i].enabled=en;document.getElementById('sc-'+i).classList.toggle('dis',!en);addLog(SENSORS[i].id+(en?' habilitado':' deshabilitado'),en?'ok':'info');}
+function renameSensor(i,name){SENSORS[i].name=name;const a=document.getElementById('aln-'+i);if(a)a.textContent=name;}
+function setAlert(i,t,v){const val=parseFloat(v);if(isNaN(val))return;if(t==='y')SENSORS[i].alertY=val;else SENSORS[i].alertR=val;addLog('Alerta '+(t==='y'?'amarilla':'roja')+' de '+SENSORS[i].id+' → '+val+'°C','info');}
+
+// ═══════════════════════════════════════════════════════════
+//  REGISTRO + TABLA
+// ═══════════════════════════════════════════════════════════
+function recordSnapshot(){
+  const vals=lastVals.map((v)=>v!==null?v:null);
+  const tl=new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const src = connMode.toUpperCase();
+  recLog.push({tl,vals:[...vals],src});
+  addTableRow(vals,tl,src);
+  addLog('Registro guardado: '+tl+' ('+src+')','ok');
+}
+
+function intervalLabel(m){
+  if(m===0.5) return '30 seg';
+  if(m===1)   return '1 min';
+  return m+' min';
+}
+
+function toggleRec(){
+  isRec=!isRec;
+  const btn=document.getElementById('btn-rec');
+  const d1=document.getElementById('dot-rec'),d2=document.getElementById('dot-rec2');
+  const l=document.getElementById('lbl-rec'),tx=document.getElementById('rec-txt');
+  if(isRec){
+    btn.textContent='DETENER';btn.className='btn btn-d';
+    d1.className='dot ok pulse';d2.className='dot ok pulse';
+    const m=parseFloat(document.getElementById('interval-sel').value);
+    const lbl=intervalLabel(m);
+    l.textContent='REGISTRO ACTIVO';tx.textContent='Próxima captura en '+lbl;
+    addLog('Registro iniciado (cada '+lbl+') — modo: '+connMode.toUpperCase(),'ok');
+    recLog=[];tableRows=[];
+    recHistoryLabels=[];
+    recHistoryData=SENSORS.map(()=>[]);
+    const cc=charts['c'];
+    cc.data.labels=[];SENSORS.forEach((s,i)=>cc.data.datasets[i].data=[]);cc.update('none');
+    document.getElementById('tbl-rows').innerHTML='';
+    document.getElementById('tbl-empty').style.display='none';
+    document.getElementById('tbl-scroll').style.display='block';
+    document.getElementById('tbl-count').textContent='Esperando primera captura...';
+    recordSnapshot();
+    recTimer=setInterval(()=>{
+      recordSnapshot();
+      const mins=parseFloat(document.getElementById('interval-sel').value);
+      tx.textContent='Próxima captura en '+intervalLabel(mins);
+    }, m*60*1000);
+  } else {
+    if(recTimer){clearInterval(recTimer);recTimer=null;}
+    btn.textContent='INICIAR';btn.className='btn btn-s';
+    d1.className='dot';d2.className='dot';
+    l.textContent='REGISTRO DETENIDO';tx.textContent='Sin registro activo';
+    addLog('Registro detenido. Total: '+recLog.length+' entradas.','info');
+    document.getElementById('tbl-count').textContent=recLog.length+' registros guardados';
+  }
+}
+
+function addTableRow(vals,tl,src){
+  let worst='ok';
+  vals.forEach((v,i)=>{if(v===null)return;if(v>=SENSORS[i].alertR)worst='crit';else if(v>=SENSORS[i].alertY&&worst!=='crit')worst='warn';});
+  const stMap={ok:'NORMAL',warn:'ALERTA',crit:'CRÍTICO'};
+  const stCls={ok:'b-ok',warn:'b-warn',crit:'b-crit'};
+  const tr=document.createElement('tr');
+  const cells=['<td class="tc">'+tl+'</td>'];
+  vals.forEach((v,i)=>{
+    if(v===null){cells.push('<td class="v-dis">—</td>');return;}
+    let cls='v-ok';
+    if(v>=SENSORS[i].alertR)cls='v-crit';
+    else if(v>=SENSORS[i].alertY)cls='v-warn';
+    cells.push('<td class="'+cls+'">'+v.toFixed(1)+'°</td>');
+  });
+  cells.push('<td><span class="badge '+stCls[worst]+'">'+stMap[worst]+'</span></td>');
+  cells.push('<td style="font-family:var(--mono);font-size:8px;color:var(--text3)">'+src+'</td>');
+  tr.innerHTML=cells.join('');
+  const tbody=document.getElementById('tbl-rows');
+  tbody.insertBefore(tr,tbody.firstChild);
+  tableRows.unshift({tl,vals:[...vals],src});
+  document.getElementById('tbl-count').textContent=tableRows.length+' registros';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  EXPORT PDF
+// ═══════════════════════════════════════════════════════════
+async function exportPDF(){
+  if(tableRows.length===0){addLog('Sin registros. Inicia el registro primero.','warn');return;}
+  addLog('Generando PDF...','info');
+  try{
+    const{jsPDF}=window.jspdf;
+    const pw_mm=297, ph_mm=210;
+
+    const chartsEl=document.getElementById('left-col');
+    const canvas=await html2canvas(chartsEl,{scale:2.5,useCORS:true,backgroundColor:'#dde3ed',logging:false,imageTimeout:0});
+    const img=canvas.toDataURL('image/png',1.0);
+
+    const pdf=new jsPDF({orientation:'landscape',unit:'mm',format:'a4'});
+
+    // Página 1: Gráficos
+    pdf.setFillColor(26,58,107);pdf.rect(0,0,pw_mm,16,'F');
+    pdf.setTextColor(245,200,0);pdf.setFontSize(13);pdf.setFont('helvetica','bold');
+    pdf.text('BYB-NORTE · REPORTE DE TEMPERATURA — COPIAPÓ',14,10);
+    pdf.setTextColor(200,215,230);pdf.setFontSize(8);pdf.setFont('helvetica','normal');
+    const modeStr='Modo: '+connMode.toUpperCase();
+    const ivSel=parseFloat(document.getElementById('interval-sel').value);
+    pdf.text(modeStr+'   Intervalo: '+intervalLabel(ivSel)+'   '+new Date().toLocaleString('es-CL'),pw_mm-14,10,{align:'right'});
+
+    pdf.setFillColor(240,244,250);pdf.rect(0,16,pw_mm,8,'F');
+    pdf.setTextColor(26,58,107);pdf.setFontSize(7);pdf.setFont('helvetica','bold');
+    const sInfo=SENSORS.map(s=>s.id+': '+s.name+' | ⚠'+s.alertY+'° ✖'+s.alertR+'°').join('     ');
+    pdf.text(sInfo,14,21);
+
+    const ratio=canvas.height/canvas.width;
+    const imgW=pw_mm, imgH=Math.min(imgW*ratio, ph_mm-34);
+    pdf.addImage(img,'PNG',0,25,imgW,imgH,'','FAST');
+
+    pdf.setFillColor(26,58,107);pdf.rect(0,ph_mm-8,pw_mm,8,'F');
+    pdf.setTextColor(74,106,138);pdf.setFontSize(7);
+    pdf.text('BYB-NORTE — Copiapó, Chile',14,ph_mm-3);
+    pdf.text('Página 1 de 2',pw_mm-14,ph_mm-3,{align:'right'});
+
+    // Página 2: Tabla
+    pdf.addPage();
+    pdf.setFillColor(26,58,107);pdf.rect(0,0,pw_mm,16,'F');
+    pdf.setTextColor(245,200,0);pdf.setFontSize(12);pdf.setFont('helvetica','bold');
+    pdf.text('BYB-NORTE · TABLA COMPLETA DE REGISTROS',14,10);
+    pdf.setTextColor(200,215,230);pdf.setFontSize(8);pdf.setFont('helvetica','normal');
+    pdf.text(tableRows.length+' registros   Intervalo: '+intervalLabel(ivSel)+'   '+new Date().toLocaleString('es-CL'),pw_mm-14,10,{align:'right'});
+
+    pdf.setFillColor(240,244,250);pdf.rect(0,16,pw_mm,8,'F');
+    pdf.setTextColor(26,58,107);pdf.setFontSize(7);pdf.setFont('helvetica','bold');
+    pdf.text(sInfo,14,21);
+
+    const stats=SENSORS.map((s,i)=>{
+      const vals=tableRows.map(r=>r.vals[i]).filter(v=>v!=null);
+      if(!vals.length)return null;
+      return{min:Math.min(...vals),max:Math.max(...vals),avg:vals.reduce((a,b)=>a+b,0)/vals.length};
+    });
+    pdf.setFillColor(26,58,107);pdf.rect(0,24,pw_mm,10,'F');
+    pdf.setTextColor(245,200,0);pdf.setFontSize(7.5);pdf.setFont('helvetica','bold');
+    pdf.text('ESTADÍSTICAS DEL PERÍODO:',14,30);
+    pdf.setTextColor(200,215,230);pdf.setFont('helvetica','normal');
+    let sx=60;
+    SENSORS.forEach((s,i)=>{
+      const st=stats[i];
+      if(!st)return;
+      pdf.text(s.id+': Mín '+st.min.toFixed(1)+'° | Máx '+st.max.toFixed(1)+'° | Prom '+st.avg.toFixed(1)+'°',sx,30);
+      sx+=58;
+    });
+
+    const head=[['N°','HORA',...SENSORS.map(s=>s.id+'\n'+s.name.split(' ').slice(0,2).join(' ')),'ESTADO','MODO']];
+    const body=[...tableRows].reverse().map((row,n)=>{
+      let worst='ok';
+      row.vals.forEach((v,i)=>{if(v===null)return;if(v>=SENSORS[i].alertR)worst='crit';else if(v>=SENSORS[i].alertY&&worst!=='crit')worst='warn';});
+      const stMap={ok:'NORMAL',warn:'ALERTA',crit:'CRÍTICO'};
+      const cells=[String(n+1),row.tl];
+      row.vals.forEach((v,i)=>cells.push(v!=null?v.toFixed(1)+' °C':'—'));
+      cells.push(stMap[worst]);
+      cells.push(row.src||'—');
+      return cells;
+    });
+
+    pdf.autoTable({
+      startY:36,head,body,
+      styles:{font:'helvetica',fontSize:8.5,cellPadding:3,halign:'center',lineColor:[200,212,230],lineWidth:0.1},
+      headStyles:{fillColor:[26,58,107],textColor:[245,200,0],fontStyle:'bold',fontSize:8,cellPadding:3},
+      columnStyles:{0:{cellWidth:10,halign:'center'},1:{cellWidth:24,halign:'left'}},
+      alternateRowStyles:{fillColor:[245,248,255]},
+      didParseCell:function(data){
+        if(data.section==='body'&&data.column.index>=2&&data.column.index<=SENSORS.length+1){
+          const v=parseFloat(data.cell.raw);const i=data.column.index-2;
+          if(!isNaN(v)&&i<SENSORS.length){
+            if(v>=SENSORS[i].alertR){data.cell.styles.textColor=[185,28,28];data.cell.styles.fontStyle='bold';data.cell.styles.fillColor=[255,240,240];}
+            else if(v>=SENSORS[i].alertY){data.cell.styles.textColor=[180,83,9];data.cell.styles.fontStyle='bold';data.cell.styles.fillColor=[255,252,235];}
+            else{data.cell.styles.textColor=[21,101,192];}
+          }
+        }
+        if(data.section==='body'&&data.column.index===SENSORS.length+2){
+          const t=data.cell.raw;
+          if(t==='CRÍTICO'){data.cell.styles.textColor=[185,28,28];data.cell.styles.fontStyle='bold';data.cell.styles.fillColor=[255,240,240];}
+          else if(t==='ALERTA'){data.cell.styles.textColor=[180,83,9];data.cell.styles.fontStyle='bold';data.cell.styles.fillColor=[255,252,235];}
+          else{data.cell.styles.textColor=[21,128,61];}
+        }
+      },
+      margin:{top:36,left:8,right:8},
+      didDrawPage:function(data){
+        const pageCount=pdf.internal.getNumberOfPages();
+        const curPage=pdf.internal.getCurrentPageInfo().pageNumber;
+        pdf.setFillColor(26,58,107);pdf.rect(0,ph_mm-8,pw_mm,8,'F');
+        pdf.setTextColor(74,106,138);pdf.setFontSize(7);
+        pdf.text('BYB-NORTE — Copiapó, Chile',14,ph_mm-3);
+        pdf.text('Página '+curPage+' de '+pageCount,pw_mm-14,ph_mm-3,{align:'right'});
+      }
+    });
+
+    pdf.save('byb-norte-reporte-'+new Date().toISOString().slice(0,10)+'.pdf');
+    addLog('PDF exportado: '+tableRows.length+' registros.','ok');
+  }catch(e){addLog('Error PDF: '+e.message,'crit');console.error(e);}
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+buildCharts();
+buildSensorConfig();
+buildAlertConfig();
+updateSummary([null,null,null,null]);
+setInterval(simLoop, 1500);
+simLoop();
+</script>
+</body>
+</html>
